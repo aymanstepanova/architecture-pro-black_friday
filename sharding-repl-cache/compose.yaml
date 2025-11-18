@@ -1,0 +1,230 @@
+name: sharding-repl-cache
+
+services:
+  # ===================== APPLICATION =====================
+  app-1:
+    container_name: pymongo-api
+    build:
+      context: api_app
+      dockerfile: Dockerfile
+    environment:
+      # приложение должно ходить в mongos
+      MONGODB_URL: "mongodb://mongos-router:27017"
+      MONGODB_DATABASE_NAME: "somedb"
+      REDIS_URL: "redis://redis-1:6379"
+    depends_on:
+      mongos-router:
+        condition: service_healthy
+      cluster-init:
+        condition: service_completed_successfully
+      mongo-data-init:
+        condition: service_completed_successfully
+      redis-1:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  # ===================== REDIS =====================
+  redis-1:
+    image: redis:7-alpine
+    container_name: redis-1
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # ===================== CONFIG SERVERS (RS) =====================
+  configSrv-1:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: configSrv-1
+    command: ["mongod","--configsvr","--replSet","cfgReplSet","--bind_ip_all","--port","27017"]
+    volumes:
+      - cfg1_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --eval 'db.adminCommand({ping:1})' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  configSrv-2:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: configSrv-2
+    command: ["mongod","--configsvr","--replSet","cfgReplSet","--bind_ip_all","--port","27017"]
+    volumes:
+      - cfg2_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --eval 'db.adminCommand({ping:1})' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  configSrv-3:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: configSrv-3
+    command: ["mongod","--configsvr","--replSet","cfgReplSet","--bind_ip_all","--port","27017"]
+    volumes:
+      - cfg3_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --eval 'db.adminCommand({ping:1})' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # ===================== SHARDS (Replica Sets с 3 узлами) =====================
+  # Shard 1 - Replica Set
+  shard1-1:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-1
+    command: ["mongod","--shardsvr","--replSet","shard1RS","--bind_ip_all","--port","27018"]
+    volumes:
+      - shard1_1_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --port 27018 --eval 'db.adminCommand({ping:1})' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  shard1-2:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-2
+    command: ["mongod","--shardsvr","--replSet","shard1RS","--bind_ip_all","--port","27018"]
+    volumes:
+      - shard1_2_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --port 27018 --eval 'db.adminCommand({ping:1})' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  shard1-3:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-3
+    command: ["mongod","--shardsvr","--replSet","shard1RS","--bind_ip_all","--port","27018"]
+    volumes:
+      - shard1_3_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --port 27018 --eval 'db.adminCommand({ping:1})' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # Shard 2 - Replica Set
+  shard2-1:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-1
+    command: ["mongod","--shardsvr","--replSet","shard2RS","--bind_ip_all","--port","27018"]
+    volumes:
+      - shard2_1_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --port 27018 --eval 'db.adminCommand({ping:1})' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  shard2-2:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-2
+    command: ["mongod","--shardsvr","--replSet","shard2RS","--bind_ip_all","--port","27018"]
+    volumes:
+      - shard2_2_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --port 27018 --eval 'db.adminCommand({ping:1})' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  shard2-3:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-3
+    command: ["mongod","--shardsvr","--replSet","shard2RS","--bind_ip_all","--port","27018"]
+    volumes:
+      - shard2_3_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --port 27018 --eval 'db.adminCommand({ping:1})' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # ===================== Точка входа в кластер mongo =====================
+  mongos-router:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: mongos-router
+    depends_on:
+      configSrv-1:
+        condition: service_healthy
+      configSrv-2:
+        condition: service_healthy
+      configSrv-3:
+        condition: service_healthy
+    command: >
+      bash -lc "
+        mongos --configdb cfgReplSet/configSrv-1:27017,configSrv-2:27017,configSrv-3:27017 --bind_ip_all --port 27017
+      "
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD-SHELL","mongosh --quiet --host mongos-router --eval 'sh.status()' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  # ===================== Инициализация =====================
+  cluster-init:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: cluster-init
+    depends_on:
+      configSrv-1:
+        condition: service_healthy
+      configSrv-2:
+        condition: service_healthy
+      configSrv-3:
+        condition: service_healthy
+      shard1-1:
+        condition: service_healthy
+      shard1-2:
+        condition: service_healthy
+      shard1-3:
+        condition: service_healthy
+      shard2-1:
+        condition: service_healthy
+      shard2-2:
+        condition: service_healthy
+      shard2-3:
+        condition: service_healthy
+      mongos-router:
+        condition: service_started
+    volumes:
+      - ./scripts/init-cluster.sh:/init-cluster.sh
+    entrypoint: ["bash", "/init-cluster.sh"]
+    restart: "no"
+  
+  mongo-data-init:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: mongo-data-init
+    depends_on:
+      cluster-init:
+        condition: service_completed_successfully
+      mongos-router:
+        condition: service_started
+    volumes:
+      - ./scripts/mongo-init.sh:/mongo-init.sh
+    entrypoint: ["bash", "/mongo-init.sh"]
+    restart: "no"
+
+volumes:
+  cfg1_data:
+  cfg2_data:
+  cfg3_data:
+  shard1_1_data:
+  shard1_2_data:
+  shard1_3_data:
+  shard2_1_data:
+  shard2_2_data:
+  shard2_3_data:
+  redis_data:
+
